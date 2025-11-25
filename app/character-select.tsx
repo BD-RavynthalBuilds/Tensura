@@ -1,32 +1,24 @@
 import { router } from 'expo-router';
-import { ChevronLeft, Flame, Droplet, Zap, Lock, Gem } from 'lucide-react-native';
-import React, { useState, useRef } from 'react';
+import { ChevronLeft, Lock } from 'lucide-react-native';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  Animated,
   Dimensions,
   Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { CHARACTERS } from '@/constants/characters';
+import { CHARACTERS, CHARACTER_CATEGORIES, getCharactersByCategory } from '@/constants/characters';
 import { CHARACTER_UNLOCK_COSTS } from '@/constants/shop';
 import { useGameState } from '@/contexts/GameStateContext';
-import { CharacterId } from '@/types/game';
+import { CharacterId, CharacterCategory } from '@/types/game';
 
 const { width } = Dimensions.get('window');
-
-const ELEMENT_ICONS = {
-  water: Droplet,
-  fire: Flame,
-  storm: Zap,
-  darkness: null,
-  light: null,
-};
+const GRID_ITEM_SIZE = 80;
 
 const ELEMENT_COLORS = {
   water: '#00BFFF',
@@ -46,36 +38,23 @@ const RARITY_COLORS = {
 export default function CharacterSelect() {
   const insets = useSafeAreaInsets();
   const { progress, isCharacterUnlocked } = useGameState();
+  const [selectedCategory, setSelectedCategory] = useState<CharacterCategory>('Tensura');
   const [selectedCharacter, setSelectedCharacter] = useState<CharacterId>(
     progress.unlockedCharacters[0] || 'rimuru'
   );
-  const scaleAnims = useRef<Record<string, Animated.Value>>(
-    Object.keys(CHARACTERS).reduce((acc, key) => {
-      acc[key] = new Animated.Value(1);
-      return acc;
-    }, {} as Record<string, Animated.Value>)
-  ).current;
+
+  const charactersInCategory = useMemo(() => {
+    return getCharactersByCategory(selectedCategory);
+  }, [selectedCategory]);
 
   const handleCharacterPress = (characterId: CharacterId) => {
-    if (!isCharacterUnlocked(characterId)) {
-      const cost = CHARACTER_UNLOCK_COSTS[characterId];
+    const isUnlocked = isCharacterUnlocked(characterId);
+    if (!isUnlocked) {
+      const cost = CHARACTER_UNLOCK_COSTS[characterId] || 0;
       Alert.alert('Character Locked', `Unlock ${CHARACTERS[characterId].name} in the Shop for ${cost} gems!`);
       return;
     }
     setSelectedCharacter(characterId);
-    Animated.sequence([
-      Animated.timing(scaleAnims[characterId], {
-        toValue: 0.95,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.spring(scaleAnims[characterId], {
-        toValue: 1,
-        tension: 100,
-        friction: 5,
-        useNativeDriver: true,
-      }),
-    ]).start();
   };
 
   const handleStartGame = () => {
@@ -87,9 +66,6 @@ export default function CharacterSelect() {
   };
 
   const character = CHARACTERS[selectedCharacter];
-  const ElementIcon = ELEMENT_ICONS[character.element];
-  const elementColor = ELEMENT_COLORS[character.element];
-  const rarityColor = RARITY_COLORS[character.rarity];
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -97,133 +73,253 @@ export default function CharacterSelect() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <ChevronLeft size={28} color="#FFFFFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>SELECT CHARACTER</Text>
+        <Text style={styles.headerTitle}>CHARACTER SELECT</Text>
         <View style={styles.backButton} />
       </View>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.characterList}
-        snapToInterval={width * 0.7 + 20}
-        decelerationRate="fast"
-      >
-        {Object.values(CHARACTERS).map((char) => {
-          const isSelected = char.id === selectedCharacter;
-          const isUnlocked = isCharacterUnlocked(char.id);
-          const cost = CHARACTER_UNLOCK_COSTS[char.id];
-          return (
-            <TouchableOpacity
-              key={char.id}
-              onPress={() => handleCharacterPress(char.id)}
-              activeOpacity={0.8}
-            >
-              <Animated.View
-                style={[
-                  styles.characterCard,
-                  {
-                    borderColor: isSelected ? rarityColor : '#444',
-                    transform: [{ scale: scaleAnims[char.id] }],
-                    opacity: isUnlocked ? 1 : 0.5,
-                  },
-                ]}
-              >
-                <View style={[styles.characterPortrait, { backgroundColor: ELEMENT_COLORS[char.element] + '20' }]}>
-                  <View style={styles.characterIconPlaceholder}>
-                    <Text style={styles.characterInitial}>{char.name.charAt(0)}</Text>
+      <View style={styles.content}>
+        <View style={styles.leftPanel}>
+          <ScrollView 
+            style={styles.tabsContainer}
+            showsVerticalScrollIndicator={false}
+          >
+            {CHARACTER_CATEGORIES.map((category) => {
+              const categoryChars = getCharactersByCategory(category);
+              const unlockedCount = categoryChars.filter(c => isCharacterUnlocked(c.id)).length;
+              const totalCount = categoryChars.length;
+
+              return (
+                <TouchableOpacity
+                  key={category}
+                  style={[
+                    styles.tab,
+                    selectedCategory === category && styles.tabActive,
+                  ]}
+                  onPress={() => setSelectedCategory(category)}
+                >
+                  <Text
+                    style={[
+                      styles.tabText,
+                      selectedCategory === category && styles.tabTextActive,
+                    ]}
+                  >
+                    {category}
+                  </Text>
+                  <Text style={styles.tabCount}>
+                    {unlockedCount}/{totalCount}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+
+          <ScrollView 
+            style={styles.characterGrid}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.characterGridContent}
+          >
+            {charactersInCategory.length > 0 ? (
+              charactersInCategory.map((char) => {
+                const isSelected = char.id === selectedCharacter;
+                const isUnlocked = isCharacterUnlocked(char.id);
+
+                return (
+                  <TouchableOpacity
+                    key={char.id}
+                    style={[
+                      styles.characterGridItem,
+                      {
+                        borderColor: isSelected 
+                          ? RARITY_COLORS[char.rarity] 
+                          : ELEMENT_COLORS[char.element] + '40',
+                        backgroundColor: ELEMENT_COLORS[char.element] + '15',
+                        opacity: isUnlocked ? 1 : 0.6,
+                      },
+                      isSelected && styles.characterGridItemSelected,
+                    ]}
+                    onPress={() => handleCharacterPress(char.id)}
+                  >
+                    <View style={styles.characterIconContainer}>
+                      <Text style={styles.characterInitial}>{char.name.charAt(0)}</Text>
+                    </View>
+                    {!isUnlocked && (
+                      <View style={styles.lockedBadge}>
+                        <Lock size={16} color="#FFFFFF" />
+                      </View>
+                    )}
+                    <Text 
+                      style={styles.characterGridName} 
+                      numberOfLines={1}
+                    >
+                      {char.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })
+            ) : (
+              <View style={styles.emptyCategory}>
+                <Text style={styles.emptyCategoryText}>
+                  No characters in this category yet
+                </Text>
+              </View>
+            )}
+          </ScrollView>
+        </View>
+
+        <View style={styles.rightPanel}>
+          <ScrollView 
+            style={styles.detailsContainer}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.characterHeader}>
+              <View style={[
+                styles.characterPortrait,
+                { backgroundColor: ELEMENT_COLORS[character.element] + '20' }
+              ]}>
+                <Text style={styles.characterPortraitInitial}>
+                  {character.name.charAt(0)}
+                </Text>
+              </View>
+              
+              <View style={styles.characterTitleInfo}>
+                <Text style={[styles.characterName, { color: RARITY_COLORS[character.rarity] }]}>
+                  {character.name}
+                </Text>
+                <Text style={styles.characterDescription}>{character.description}</Text>
+                
+                <View style={styles.badges}>
+                  <View style={[styles.badge, { backgroundColor: ELEMENT_COLORS[character.element] + '30' }]}>
+                    <Text style={[styles.badgeText, { color: ELEMENT_COLORS[character.element] }]}>
+                      {character.element.toUpperCase()}
+                    </Text>
                   </View>
-                  {!isUnlocked && (
-                    <View style={styles.lockedOverlay}>
-                      <Lock size={32} color="#FFFFFF" />
-                      {cost > 0 && (
-                        <View style={styles.lockCost}>
-                          <Gem size={16} color="#FFD700" fill="#FFD700" />
-                          <Text style={styles.lockCostText}>{cost}</Text>
-                        </View>
-                      )}
-                    </View>
-                  )}
-                  {isSelected && isUnlocked && (
-                    <View style={[styles.selectedBadge, { backgroundColor: rarityColor }]}>
-                      <Text style={styles.selectedText}>SELECTED</Text>
-                    </View>
-                  )}
+                  <View style={[styles.badge, { backgroundColor: RARITY_COLORS[character.rarity] + '30' }]}>
+                    <Text style={[styles.badgeText, { color: RARITY_COLORS[character.rarity] }]}>
+                      {character.rarity.toUpperCase()}
+                    </Text>
+                  </View>
                 </View>
-                <View style={styles.characterInfo}>
-                  <Text style={[styles.characterName, { color: rarityColor }]}>{char.name}</Text>
-                  <Text style={styles.characterDescription}>{char.description}</Text>
-                </View>
-              </Animated.View>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+              </View>
+            </View>
 
-      <View style={styles.detailsPanel}>
-        <View style={styles.detailsHeader}>
-          <View style={styles.elementBadge}>
-            {ElementIcon && <ElementIcon size={20} color={elementColor} fill={elementColor} />}
-            <Text style={[styles.elementText, { color: elementColor }]}>
-              {character.element.toUpperCase()}
-            </Text>
-          </View>
-          <View style={[styles.rarityBadge, { backgroundColor: rarityColor + '30' }]}>
-            <Text style={[styles.rarityText, { color: rarityColor }]}>
-              {character.rarity.toUpperCase()}
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.statsContainer}>
-          <Text style={styles.statsTitle}>BASE STATS</Text>
-          <View style={styles.statsGrid}>
-            <StatBar label="HP" value={character.baseStats.hp} max={200} color="#FF4444" />
-            <StatBar label="MP" value={character.baseStats.mp} max={200} color="#4444FF" />
-            <StatBar label="POWER" value={character.baseStats.power} max={50} color="#FFD700" />
-            <StatBar label="DEFENSE" value={character.baseStats.defense} max={50} color="#00DD00" />
-            <StatBar label="SPEED" value={character.baseStats.speed} max={10} color="#00BFFF" />
-            <StatBar label="RANGE" value={character.baseStats.range} max={500} color="#FF69B4" />
-          </View>
-        </View>
-
-        <View style={styles.evolutionPreview}>
-          <Text style={styles.evolutionTitle}>EVOLUTIONS</Text>
-          <View style={styles.evolutionChain}>
-            {character.evolutions.map((evo, index) => (
-              <View key={index} style={styles.evolutionStep}>
-                <View style={[styles.evolutionNode, { borderColor: elementColor }]}>
-                  <Text style={styles.evolutionLevel}>{index + 1}</Text>
-                </View>
-                <Text style={styles.evolutionName}>{evo.name}</Text>
-                {index < character.evolutions.length - 1 && (
-                  <View style={[styles.evolutionArrow, { backgroundColor: elementColor }]} />
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>BASE STATS</Text>
+              <View style={styles.statsGrid}>
+                <StatRow label="HP" value={character.baseStats.hp} color="#FF4444" />
+                <StatRow label="MP" value={character.baseStats.mp} color="#4444FF" />
+                <StatRow label="POWER" value={character.baseStats.power} color="#FFD700" />
+                <StatRow label="DEFENSE" value={character.baseStats.defense} color="#00DD00" />
+                <StatRow label="SPEED" value={character.baseStats.speed} color="#00BFFF" />
+                <StatRow label="RANGE" value={character.baseStats.range} color="#FF69B4" />
+                {character.baseStats.critChance !== undefined && (
+                  <StatRow label="CRIT" value={`${character.baseStats.critChance}%`} color="#FFD700" />
+                )}
+                {character.baseStats.attack !== undefined && (
+                  <StatRow label="ATTACK" value={character.baseStats.attack} color="#FF4500" />
                 )}
               </View>
-            ))}
+            </View>
+
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>EVOLUTION PATH</Text>
+              {character.evolutions.map((evo, index) => (
+                <View key={index} style={styles.evolutionItem}>
+                  <View style={styles.evolutionHeader}>
+                    <View style={[styles.evolutionBadge, { borderColor: ELEMENT_COLORS[character.element] }]}>
+                      <Text style={styles.evolutionLevel}>{index}</Text>
+                    </View>
+                    <Text style={styles.evolutionName}>{evo.name}</Text>
+                    <Text style={styles.evolutionMultiplier}>
+                      ×{evo.statsMultiplier}
+                    </Text>
+                  </View>
+                  {evo.lore && (
+                    <Text style={styles.evolutionLore}>{evo.lore}</Text>
+                  )}
+                  {evo.benefits && (
+                    <Text style={styles.evolutionBenefits}>
+                      Benefits: {evo.benefits}
+                    </Text>
+                  )}
+                  <Text style={styles.evolutionRequirements}>
+                    Requirements: Level {evo.requirements.level}
+                    {evo.requirements.kills ? ` • ${evo.requirements.kills} Kills` : ''}
+                  </Text>
+                </View>
+              ))}
+            </View>
+
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>ABILITIES</Text>
+              {character.moves.map((move) => (
+                <View key={move.id} style={styles.abilityItem}>
+                  <View style={styles.abilityHeader}>
+                    <Text style={[styles.abilityName, getAbilityColor(move.type)]}>
+                      {move.name}
+                    </Text>
+                    <View style={[styles.abilityTypeBadge, getAbilityTypeBadgeStyle(move.type)]}>
+                      <Text style={styles.abilityTypeText}>{move.type.toUpperCase()}</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.abilityDescription}>{move.description}</Text>
+                  <View style={styles.abilityStats}>
+                    <Text style={styles.abilityStat}>Damage: {move.damage}</Text>
+                    <Text style={styles.abilityStat}>Range: {move.range}</Text>
+                    <Text style={styles.abilityStat}>MP: {move.mpCost}</Text>
+                    <Text style={styles.abilityStat}>CD: {move.cooldown}s</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </ScrollView>
+
+          <View style={[styles.footer, { paddingBottom: insets.bottom + 10 }]}>
+            <TouchableOpacity
+              style={[
+                styles.startButton,
+                { backgroundColor: ELEMENT_COLORS[character.element] }
+              ]}
+              onPress={handleStartGame}
+            >
+              <Text style={styles.startButtonText}>START BATTLE</Text>
+            </TouchableOpacity>
           </View>
         </View>
-      </View>
-
-      <View style={[styles.footer, { paddingBottom: insets.bottom + 20 }]}>
-        <TouchableOpacity style={[styles.startButton, { backgroundColor: elementColor }]} onPress={handleStartGame}>
-          <Text style={styles.startButtonText}>START BATTLE</Text>
-        </TouchableOpacity>
       </View>
     </View>
   );
 }
 
-function StatBar({ label, value, max, color }: { label: string; value: number; max: number; color: string }) {
-  const percentage = (value / max) * 100;
+function StatRow({ label, value, color }: { label: string; value: number | string; color: string }) {
   return (
-    <View style={styles.statBar}>
+    <View style={styles.statRow}>
       <Text style={styles.statLabel}>{label}</Text>
-      <View style={styles.statBarContainer}>
-        <View style={[styles.statBarFill, { width: `${percentage}%`, backgroundColor: color }]} />
+      <View style={styles.statValueContainer}>
+        <View style={[styles.statDot, { backgroundColor: color }]} />
+        <Text style={[styles.statValue, { color }]}>{value}</Text>
       </View>
-      <Text style={styles.statValue}>{value}</Text>
     </View>
   );
+}
+
+function getAbilityColor(type: string) {
+  const colors = {
+    basic: { color: '#AAA' },
+    charge: { color: '#4A9EFF' },
+    special: { color: '#9D4EDD' },
+    ultimate: { color: '#FFD700' },
+  };
+  return colors[type as keyof typeof colors] || colors.basic;
+}
+
+function getAbilityTypeBadgeStyle(type: string) {
+  const styles = {
+    basic: { backgroundColor: '#AAA30' },
+    charge: { backgroundColor: '#4A9EFF30' },
+    special: { backgroundColor: '#9D4EDD30' },
+    ultimate: { backgroundColor: '#FFD70030' },
+  };
+  return styles[type as keyof typeof styles] || styles.basic;
 }
 
 const styles = StyleSheet.create({
@@ -237,6 +333,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1a1030',
   },
   backButton: {
     width: 40,
@@ -245,230 +343,319 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '900' as const,
     color: '#FFFFFF',
-    letterSpacing: 2,
+    letterSpacing: 1.5,
   },
-  characterList: {
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-    gap: 20,
+  content: {
+    flex: 1,
+    flexDirection: 'row',
   },
-  characterCard: {
-    width: width * 0.7,
-    backgroundColor: '#1a1030',
-    borderRadius: 20,
-    borderWidth: 3,
-    overflow: 'hidden',
+  leftPanel: {
+    width: width * 0.35,
+    borderRightWidth: 1,
+    borderRightColor: '#1a1030',
   },
-  characterPortrait: {
-    height: 220,
+  tabsContainer: {
+    maxHeight: 180,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1a1030',
+  },
+  tab: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1a103020',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
   },
-  characterIconPlaceholder: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
+  tabActive: {
+    backgroundColor: '#1a1030',
+    borderLeftWidth: 3,
+    borderLeftColor: '#FFD700',
+  },
+  tabText: {
+    fontSize: 12,
+    fontWeight: '700' as const,
+    color: '#888',
+    flex: 1,
+  },
+  tabTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '900' as const,
+  },
+  tabCount: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+    color: '#666',
+    marginLeft: 8,
+  },
+  characterGrid: {
+    flex: 1,
+  },
+  characterGridContent: {
+    padding: 8,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  characterGridItem: {
+    width: GRID_ITEM_SIZE,
+    height: GRID_ITEM_SIZE + 20,
+    margin: 4,
+    borderRadius: 12,
+    borderWidth: 2,
+    padding: 6,
+    alignItems: 'center',
+  },
+  characterGridItemSelected: {
+    borderWidth: 3,
+    transform: [{ scale: 1.05 }],
+  },
+  characterIconContainer: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     backgroundColor: '#2a2050',
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 4,
   },
   characterInitial: {
-    fontSize: 72,
+    fontSize: 28,
     fontWeight: '900' as const,
     color: '#FFFFFF',
   },
-  selectedBadge: {
+  lockedBadge: {
     position: 'absolute',
-    top: 16,
-    right: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    borderRadius: 10,
+    padding: 4,
   },
-  selectedText: {
+  characterGridName: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+    color: '#FFFFFF',
+    textAlign: 'center',
+  },
+  emptyCategory: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+  },
+  emptyCategoryText: {
     fontSize: 12,
+    color: '#666',
+    textAlign: 'center',
+  },
+  rightPanel: {
+    flex: 1,
+  },
+  detailsContainer: {
+    flex: 1,
+  },
+  characterHeader: {
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1a1030',
+  },
+  characterPortrait: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  characterPortraitInitial: {
+    fontSize: 60,
     fontWeight: '900' as const,
     color: '#FFFFFF',
   },
-  characterInfo: {
-    padding: 16,
+  characterTitleInfo: {
+    alignItems: 'center',
   },
   characterName: {
     fontSize: 24,
     fontWeight: '900' as const,
+    textAlign: 'center',
     marginBottom: 4,
   },
   characterDescription: {
     fontSize: 14,
     color: '#AAA',
+    textAlign: 'center',
+    marginBottom: 12,
     fontWeight: '600' as const,
   },
-  detailsPanel: {
-    backgroundColor: '#150a30',
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    padding: 20,
-    marginTop: 10,
-  },
-  detailsHeader: {
+  badges: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-  elementBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: 8,
-    backgroundColor: '#1a1030',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
   },
-  elementText: {
-    fontSize: 14,
+  badge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  badgeText: {
+    fontSize: 11,
     fontWeight: '900' as const,
   },
-  rarityBadge: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
+  section: {
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1a1030',
   },
-  rarityText: {
-    fontSize: 14,
-    fontWeight: '900' as const,
-  },
-  statsContainer: {
-    marginBottom: 20,
-  },
-  statsTitle: {
+  sectionTitle: {
     fontSize: 16,
     fontWeight: '900' as const,
     color: '#FFFFFF',
-    marginBottom: 12,
+    marginBottom: 16,
     letterSpacing: 1,
   },
   statsGrid: {
-    gap: 8,
-  },
-  statBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: 10,
   },
+  statRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   statLabel: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700' as const,
     color: '#AAA',
-    width: 70,
   },
-  statBarContainer: {
-    flex: 1,
+  statValueContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  statDot: {
+    width: 8,
     height: 8,
-    backgroundColor: '#2a2050',
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  statBarFill: {
-    height: '100%',
     borderRadius: 4,
   },
   statValue: {
-    fontSize: 12,
-    fontWeight: '700' as const,
-    color: '#FFFFFF',
-    width: 40,
-    textAlign: 'right',
-  },
-  evolutionPreview: {
-    marginBottom: 10,
-  },
-  evolutionTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '900' as const,
-    color: '#FFFFFF',
-    marginBottom: 12,
-    letterSpacing: 1,
   },
-  evolutionChain: {
+  evolutionItem: {
+    backgroundColor: '#1a1030',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+  },
+  evolutionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    marginBottom: 8,
   },
-  evolutionStep: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  evolutionNode: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 3,
+  evolutionBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 2,
     backgroundColor: '#2a2050',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 6,
+    marginRight: 10,
   },
   evolutionLevel: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '900' as const,
     color: '#FFFFFF',
   },
   evolutionName: {
-    fontSize: 10,
-    fontWeight: '700' as const,
-    color: '#AAA',
-    textAlign: 'center',
-  },
-  evolutionArrow: {
-    position: 'absolute',
-    top: 18,
-    right: -10,
-    width: 20,
-    height: 4,
-    borderRadius: 2,
-  },
-  footer: {
-    paddingHorizontal: 20,
-  },
-  startButton: {
-    paddingVertical: 18,
-    borderRadius: 30,
-    alignItems: 'center',
-  },
-  startButtonText: {
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: '900' as const,
     color: '#FFFFFF',
-    letterSpacing: 2,
+    flex: 1,
   },
-  lockedOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    borderRadius: 70,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  lockCost: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 8,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  lockCostText: {
+  evolutionMultiplier: {
     fontSize: 14,
     fontWeight: '900' as const,
     color: '#FFD700',
+  },
+  evolutionLore: {
+    fontSize: 12,
+    color: '#AAA',
+    fontStyle: 'italic' as const,
+    marginBottom: 4,
+  },
+  evolutionBenefits: {
+    fontSize: 12,
+    color: '#4A9EFF',
+    marginBottom: 4,
+    fontWeight: '600' as const,
+  },
+  evolutionRequirements: {
+    fontSize: 11,
+    color: '#888',
+    fontWeight: '600' as const,
+  },
+  abilityItem: {
+    backgroundColor: '#1a1030',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+  },
+  abilityHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  abilityName: {
+    fontSize: 16,
+    fontWeight: '900' as const,
+    flex: 1,
+  },
+  abilityTypeBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  abilityTypeText: {
+    fontSize: 10,
+    fontWeight: '900' as const,
+    color: '#FFFFFF',
+  },
+  abilityDescription: {
+    fontSize: 13,
+    color: '#AAA',
+    marginBottom: 8,
+    fontWeight: '600' as const,
+  },
+  abilityStats: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  abilityStat: {
+    fontSize: 11,
+    color: '#888',
+    fontWeight: '700' as const,
+  },
+  footer: {
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#1a1030',
+  },
+  startButton: {
+    paddingVertical: 16,
+    borderRadius: 25,
+    alignItems: 'center',
+  },
+  startButtonText: {
+    fontSize: 18,
+    fontWeight: '900' as const,
+    color: '#FFFFFF',
+    letterSpacing: 1.5,
   },
 });

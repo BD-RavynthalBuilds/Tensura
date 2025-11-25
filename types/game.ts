@@ -1,4 +1,16 @@
-export type CharacterId = 'rimuru' | 'benimaru' | 'milim' | 'shion' | 'diablo' | 'veldora' | 'shuna' | 'ranga' | 'gobta';
+export type CharacterId = 'rimuru' | 'benimaru' | 'milim' | 'shion' | 'diablo' | 'veldora' | 'shuna' | 'ranga' | 'gobta' | 'souei' | 'hakurou' | 'ifrit' | 'charybdis' | 'guy_crimson' | 'testarossa' | 'ultima';
+
+export type CharacterCategory = 
+  | 'Tensura'
+  | 'Dragons'
+  | 'True Dragons'
+  | 'Demons'
+  | 'Angels'
+  | 'Primordials'
+  | 'Demi-Human'
+  | 'Human (Hero Class)'
+  | 'Arch-Angels'
+  | 'Evolved Species';
 
 export interface Character {
   id: CharacterId;
@@ -9,6 +21,7 @@ export interface Character {
   moves: Move[];
   rarity: 'common' | 'rare' | 'epic' | 'legendary';
   element: 'water' | 'fire' | 'storm' | 'darkness' | 'light';
+  category?: CharacterCategory;
 }
 
 export interface CharacterStats {
@@ -18,6 +31,8 @@ export interface CharacterStats {
   power: number;
   defense: number;
   range: number;
+  critChance?: number;
+  attack?: number;
 }
 
 export interface Evolution {
@@ -29,6 +44,8 @@ export interface Evolution {
     items?: string[];
   };
   statsMultiplier: number;
+  lore?: string;
+  benefits?: string;
 }
 
 export interface Move {
